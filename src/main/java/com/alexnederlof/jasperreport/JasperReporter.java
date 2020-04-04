@@ -13,8 +13,8 @@ package com.alexnederlof.jasperreport;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -31,13 +31,18 @@ import net.sf.jasperreports.engine.JRPropertiesUtil;
 import net.sf.jasperreports.engine.design.JRCompiler;
 import net.sf.jasperreports.engine.design.JRJdtCompiler;
 import net.sf.jasperreports.engine.xml.JRReportSaxParserFactory;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
+import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.classworlds.realm.ClassRealm;
 import org.codehaus.plexus.compiler.util.scan.InclusionScanException;
 import org.codehaus.plexus.compiler.util.scan.SimpleSourceInclusionScanner;
 import org.codehaus.plexus.compiler.util.scan.SourceInclusionScanner;
@@ -50,7 +55,7 @@ import org.codehaus.plexus.compiler.util.scan.mapping.SuffixMapping;
  * so, it keeps the folder structure in tact.
  */
 @Mojo(defaultPhase = LifecyclePhase.PROCESS_RESOURCES, name = "jasper", requiresDependencyResolution =
-		ResolutionScope.COMPILE)
+		ResolutionScope.COMPILE_PLUS_RUNTIME)
 public class JasperReporter extends AbstractMojo {
 
 	static final String ERROR_JRE_COMPILE_ERROR =
@@ -173,6 +178,12 @@ public class JasperReporter extends AbstractMojo {
 	 */
 	@Parameter
 	private String additionalClasspath;
+	
+	@Component
+	private MavenProject project;
+	
+	@Component
+	private PluginDescriptor pluginDescriptor;
 
 	private Log log;
 
@@ -203,17 +214,9 @@ public class JasperReporter extends AbstractMojo {
 				return;
 			}
 
-			ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-			Thread.currentThread().setContextClassLoader(getClassLoader(classLoader));
-			try {
-				configureJasper();
-				executeTasks(tasks);
-			}
-			finally {
-				if (classLoader != null) {
-					Thread.currentThread().setContextClassLoader(classLoader);
-				}
-			}
+			configureClassPath();
+			configureJasper();
+			executeTasks(tasks);
 		}
 	}
 
@@ -298,7 +301,7 @@ public class JasperReporter extends AbstractMojo {
 		}
 	}
 
-	private ClassLoader getClassLoader(ClassLoader classLoader)
+	private void configureClassPath()
 			throws MojoExecutionException {
 		List<URL> classpath = new ArrayList<URL>();
 		if (classpathElements != null) {
@@ -327,9 +330,17 @@ public class JasperReporter extends AbstractMojo {
 				}
 			}
 		}
-
-		URL[] urls = classpath.toArray(new URL[classpath.size()]);
-		return new URLClassLoader(urls, classLoader);
+		
+		for (Artifact artifact: project.getArtifacts()) {
+			try {
+				classpath.add(artifact.getFile().toURI().toURL());
+			} catch (MalformedURLException e) {
+				throw new MojoExecutionException(e.getMessage(), e);
+			}
+		}
+		
+		ClassRealm realm = pluginDescriptor.getClassRealm();
+		classpath.forEach(realm::addURL);
 	}
 
 	private void configureAdditionalProperties(JRPropertiesUtil propertiesUtil) {
