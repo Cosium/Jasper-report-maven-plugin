@@ -61,6 +61,9 @@ public class JasperReporter extends AbstractMojo {
 	static final String ERROR_JRE_COMPILE_ERROR =
 			"Some Jasper reports could not be compiled. See log above for details.";
 
+	@Parameter(defaultValue = "false")
+	private boolean skip;
+
 	/**
 	 * This is the java compiler used
 	 */
@@ -196,6 +199,11 @@ public class JasperReporter extends AbstractMojo {
 
 		if (verbose) {
 			logConfiguration(log);
+		}
+
+		if (skip) {
+			log.info("Skipping.");
+			return;
 		}
 
 		checkOutDirWritable(outputDirectory);
